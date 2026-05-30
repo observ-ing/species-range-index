@@ -86,3 +86,22 @@ def test_bad_magic_raises(tmp_path):
     path.write_bytes(b"XXXX" + b"\x00" * 28)
     with pytest.raises(ValueError):
         sri.SpeciesRangeIndex.load(str(path))
+
+
+def test_write_then_load_roundtrip(tmp_path):
+    path = tmp_path / "written.bin"
+    # Unsorted ids with a duplicate — the writer must sort + dedup per cell.
+    entries = {0x1111: [3, 1, 1], 0x2222: [0]}
+    sri.SpeciesRangeIndex.write(str(path), 5, 4, entries)
+
+    idx = sri.SpeciesRangeIndex.load(str(path), expected_count=5)
+    assert idx.count == 5
+    assert idx.resolution == 4
+    assert idx.num_cells == 2
+    assert idx.num_entries == 3  # 0x1111 -> [1, 3], 0x2222 -> [0]
+
+
+def test_write_invalid_resolution_raises(tmp_path):
+    path = tmp_path / "bad.bin"
+    with pytest.raises(ValueError):
+        sri.SpeciesRangeIndex.write(str(path), 1, 99, {})

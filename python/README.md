@@ -22,6 +22,11 @@ maturin develop -m python/Cargo.toml   # builds + installs into the active venv
 ```python
 from species_range_index import SpeciesRangeIndex
 
+# Write: `entries` maps each H3 cell -> the IDs in it. Cells are sorted and IDs
+# are sorted/deduplicated per cell, so the mapping need not be pre-normalized.
+SpeciesRangeIndex.write("species_geo_index.bin", num_labels, resolution, entries)
+
+# Read
 idx = SpeciesRangeIndex.load("species_geo_index.bin", expected_count=num_labels)
 idx.count, idx.resolution, idx.num_cells, idx.num_entries
 ids = idx.ids_at(37.77, -122.42)   # list[int]

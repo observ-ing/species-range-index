@@ -13,9 +13,10 @@
 //! ids = idx.ids_at(37.77, -122.42)   # -> list[int]
 //! ```
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use index_core::SpeciesRangeIndex;
+use index_core::{Resolution, SpeciesRangeIndex};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -37,6 +38,28 @@ impl PySpeciesRangeIndex {
     fn load(path: PathBuf, expected_count: Option<usize>) -> PyResult<Self> {
         SpeciesRangeIndex::load(&path, expected_count)
             .map(|inner| Self { inner })
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Build and write an `OGI1` index to `path`.
+    ///
+    /// `count` is the ID-space size the index targets (the header `count`
+    /// `load`'s `expected_count` checks against). `resolution` is the H3
+    /// resolution. `entries` maps each H3 cell to the IDs in it; cells are
+    /// sorted and the IDs within each cell are sorted + deduplicated, so the
+    /// mapping need not be pre-normalized.
+    ///
+    /// Raises `ValueError` on an invalid resolution or a write error.
+    #[staticmethod]
+    fn write(
+        path: PathBuf,
+        count: u32,
+        resolution: u8,
+        entries: HashMap<u64, Vec<u32>>,
+    ) -> PyResult<()> {
+        let resolution = Resolution::try_from(resolution)
+            .map_err(|e| PyValueError::new_err(format!("invalid H3 resolution: {e}")))?;
+        SpeciesRangeIndex::write(&path, count, resolution, entries)
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 

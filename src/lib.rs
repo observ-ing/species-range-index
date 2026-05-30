@@ -39,7 +39,8 @@ compile_error!(
     "species-range-index uses a zero-copy reinterpret of LE u32/u64; the build target is big-endian"
 );
 
-use h3o::{LatLng, Resolution};
+use h3o::LatLng;
+pub use h3o::Resolution;
 use memmap2::Mmap;
 use std::fmt;
 use std::fs::File;
