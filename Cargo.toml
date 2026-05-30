@@ -1,6 +1,6 @@
 [package]
 name = "species-range-index"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Zero-copy, mmap-backed index mapping H3 cells to sorted u32 ID lists, with O(log n) point lookup (lat/lon → species range IDs)"
 license = "MIT OR Apache-2.0"

@@ -6,7 +6,7 @@
 
 [package]
 name = "species-range-index-py"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Python bindings (PyO3) for species-range-index: H3 cell -> u32 ID lookup"
 license = "MIT OR Apache-2.0"
