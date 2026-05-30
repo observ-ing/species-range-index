@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +17,23 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # Root Rust crate (the reader)
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      # PyO3 binding crate (standalone workspace; abi3 builds without a Python
+      # interpreter, so a plain check/clippy validates it headlessly)
+      - run: cargo fmt --manifest-path python/Cargo.toml --check
+      - run: cargo clippy --manifest-path python/Cargo.toml --all-targets -- -D warnings
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install maturin pytest
+      - run: maturin develop -m python/Cargo.toml
+      - run: pytest python/tests/ -v

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "species-range-index"
+version = "0.2.0"
+description = "Python bindings for species-range-index: H3 cell -> u32 ID lookup"
+requires-python = ">=3.11"
+license = { text = "MIT OR Apache-2.0" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3 :: Only",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.maturin]
+# Build the crate in this directory (the cdylib), not the Rust lib at the repo
+# root. Must match `[lib] name` in Cargo.toml.
+manifest-path = "Cargo.toml"
+module-name = "species_range_index"

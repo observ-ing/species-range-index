@@ -34,3 +34,10 @@ reinterpreted zero-copy).
 
 The format is intended to be produced by an offline build pipeline; this crate
 is the read side.
+
+## Python bindings
+
+[`python/`](python/) provides PyO3 bindings (`pip install maturin && maturin
+develop -m python/Cargo.toml`) so a Python producer/verifier can read the same
+`OGI1` files through this Rust reader instead of a parallel hand-rolled parser.
+See [python/README.md](python/README.md).

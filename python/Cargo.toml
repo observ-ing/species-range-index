@@ -1,0 +1,27 @@
+# Standalone (nested) workspace: this PyO3 crate is built with maturin and
+# resolved independently of the root crate. It is an `extension-module`, which
+# does not link libpython, so it is intentionally not part of any cargo
+# workspace (that would break a workspace-wide `cargo test`).
+[workspace]
+
+[package]
+name = "species-range-index-py"
+version = "0.2.0"
+edition = "2021"
+description = "Python bindings (PyO3) for species-range-index: H3 cell -> u32 ID lookup"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+# The Python import name. Must match `[tool.maturin] module-name` in pyproject.
+name = "species_range_index"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Renamed so the dependency's crate name (`species_range_index`) doesn't collide
+# with this crate's own library name, which is `species_range_index` (the Python
+# module name).
+index_core = { package = "species-range-index", path = ".." }
+# abi3-py311: one wheel works across CPython >= 3.11 (matches bioclip-models'
+# requires-python). extension-module: don't link libpython (loaded by the host).
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py311"] }

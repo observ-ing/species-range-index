@@ -1,2 +1,10 @@
 /target
 Cargo.lock
+
+# Python / maturin build artifacts
+__pycache__/
+*.so
+*.pyd
+.pytest_cache/
+*.egg-info/
+/python/target
