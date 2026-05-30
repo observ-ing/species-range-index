@@ -39,5 +39,7 @@ jobs:
       # `maturin develop`, this needs no active virtualenv.)
       - run: pip install ./python
       - name: Verify type stubs are bundled in the wheel
-        run: python -c "import pathlib,species_range_index as m; p=pathlib.Path(m.__file__).parent; miss=[f for f in ('species_range_index.pyi','py.typed') if not (p/f).exists()]; assert not miss, (miss, sorted(x.name for x in p.iterdir()))"
+        # maturin packages a pure-Rust project's <module>.pyi as the package's
+        # __init__.pyi alongside py.typed.
+        run: python -c "import pathlib,species_range_index as m; p=pathlib.Path(m.__file__).parent; assert (p/'py.typed').exists(), 'missing py.typed'; assert (p/'__init__.pyi').exists() or (p/'species_range_index.pyi').exists(), sorted(x.name for x in p.iterdir())"
       - run: pytest python/tests/ -v
