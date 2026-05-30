@@ -255,6 +255,91 @@ impl SpeciesRangeIndex {
         (self.ids.end - self.ids.start) / 4
     }
 
+    /// Build an `OGI1` index and write it to `path` — the canonical writer for
+    /// the format [`load`](Self::load) reads.
+    ///
+    /// `count` is the size of the ID space the index targets: the header
+    /// `count` that `load`'s `expected_count` is checked against (e.g. the
+    /// number of species labels). `resolution` is the H3 resolution the cells
+    /// were generated at. `entries` maps each H3 cell to the IDs that fall in
+    /// it.
+    ///
+    /// The input need not be pre-sorted: cells are written ascending, duplicate
+    /// cells across the iterator are merged, and the IDs within each cell are
+    /// sorted and deduplicated — yielding the strictly-ascending CSR layout the
+    /// reader's binary search relies on.
+    pub fn write(
+        path: &Path,
+        count: u32,
+        resolution: Resolution,
+        entries: impl IntoIterator<Item = (u64, Vec<u32>)>,
+    ) -> Result<()> {
+        use std::collections::BTreeMap;
+        use std::io::{BufWriter, Write};
+
+        // Merge by cell (BTreeMap keeps cells ascending) and sort+dedup the IDs
+        // so the CSR arrays are strictly ascending.
+        let mut by_cell: BTreeMap<u64, Vec<u32>> = BTreeMap::new();
+        for (cell, ids) in entries {
+            by_cell.entry(cell).or_default().extend(ids);
+        }
+        for ids in by_cell.values_mut() {
+            ids.sort_unstable();
+            ids.dedup();
+        }
+
+        let num_cells = u32::try_from(by_cell.len()).map_err(|_| {
+            SpeciesRangeIndexError::Format(format!("too many cells ({}) for u32", by_cell.len()))
+        })?;
+        let num_entries_usize: usize = by_cell.values().map(Vec::len).sum();
+        let num_entries = u32::try_from(num_entries_usize).map_err(|_| {
+            SpeciesRangeIndexError::Format(format!(
+                "too many entries ({num_entries_usize}) for u32"
+            ))
+        })?;
+
+        let file = File::create(path).map_err(SpeciesRangeIndexError::Io)?;
+        let mut w = BufWriter::new(file);
+
+        // Header: magic + 7 u32 (see module docs).
+        w.write_all(MAGIC).map_err(SpeciesRangeIndexError::Io)?;
+        for field in [
+            VERSION,
+            count,
+            u8::from(resolution) as u32,
+            num_cells,
+            num_entries,
+            0, // reserved
+            0, // reserved
+        ] {
+            w.write_all(&field.to_le_bytes())
+                .map_err(SpeciesRangeIndexError::Io)?;
+        }
+
+        // Body: cells, then CSR offsets (cumulative, starting at 0), then ids.
+        for &cell in by_cell.keys() {
+            w.write_all(&cell.to_le_bytes())
+                .map_err(SpeciesRangeIndexError::Io)?;
+        }
+        let mut offset: u32 = 0;
+        w.write_all(&offset.to_le_bytes())
+            .map_err(SpeciesRangeIndexError::Io)?;
+        for ids in by_cell.values() {
+            offset += ids.len() as u32;
+            w.write_all(&offset.to_le_bytes())
+                .map_err(SpeciesRangeIndexError::Io)?;
+        }
+        for ids in by_cell.values() {
+            for &id in ids {
+                w.write_all(&id.to_le_bytes())
+                    .map_err(SpeciesRangeIndexError::Io)?;
+            }
+        }
+
+        w.flush().map_err(SpeciesRangeIndexError::Io)?;
+        Ok(())
+    }
+
     fn cells(&self) -> &[u64] {
         bytemuck::cast_slice(&self.mmap[self.cells.clone()])
     }
@@ -298,42 +383,45 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    /// Build an in-memory index file with the CSR layout and write it to `path`.
+    /// Write an index to `path` via the public [`SpeciesRangeIndex::write`],
+    /// so the tests exercise the real writer against the real reader.
     fn write_index(
         path: &Path,
         count: u32,
         resolution: Resolution,
         cells_and_ids: &[(u64, &[u32])],
     ) {
-        let num_cells = cells_and_ids.len() as u32;
-        let num_entries: u32 = cells_and_ids.iter().map(|(_, s)| s.len() as u32).sum();
+        let entries = cells_and_ids
+            .iter()
+            .map(|(cell, ids)| (*cell, ids.to_vec()));
+        SpeciesRangeIndex::write(path, count, resolution, entries).unwrap();
+    }
 
-        let mut buf = Vec::new();
-        buf.extend_from_slice(MAGIC);
-        buf.extend_from_slice(&VERSION.to_le_bytes());
-        buf.extend_from_slice(&count.to_le_bytes());
-        buf.extend_from_slice(&(u8::from(resolution) as u32).to_le_bytes());
-        buf.extend_from_slice(&num_cells.to_le_bytes());
-        buf.extend_from_slice(&num_entries.to_le_bytes());
-        buf.extend_from_slice(&[0u8; 8]); // reserved
+    #[test]
+    fn write_sorts_cells_merges_and_dedups() {
+        let sf = LatLng::new(37.77, -122.42).unwrap();
+        let slc = LatLng::new(40.76, -111.89).unwrap();
+        let sf_cell: u64 = sf.to_cell(Resolution::Four).into();
+        let slc_cell: u64 = slc.to_cell(Resolution::Four).into();
 
-        for (cell, _) in cells_and_ids {
-            buf.extend_from_slice(&cell.to_le_bytes());
-        }
-        let mut offset: u32 = 0;
-        buf.extend_from_slice(&offset.to_le_bytes());
-        for (_, ids) in cells_and_ids {
-            offset += ids.len() as u32;
-            buf.extend_from_slice(&offset.to_le_bytes());
-        }
-        for (_, ids) in cells_and_ids {
-            for id in *ids {
-                buf.extend_from_slice(&id.to_le_bytes());
-            }
-        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("index.bin");
 
-        let mut f = std::fs::File::create(path).unwrap();
-        f.write_all(&buf).unwrap();
+        // Unsorted cells, unsorted + duplicate IDs, and a duplicate cell entry
+        // that must be merged — the writer should normalize all of it into the
+        // strictly-ascending CSR layout the reader expects.
+        let entries = vec![
+            (slc_cell, vec![2u32, 1, 2]),
+            (sf_cell, vec![2u32, 0]),
+            (slc_cell, vec![3u32, 1]),
+        ];
+        SpeciesRangeIndex::write(&path, 4, Resolution::Four, entries).unwrap();
+
+        let idx = SpeciesRangeIndex::load(&path, Some(4)).unwrap();
+        assert_eq!(idx.num_cells(), 2);
+        assert_eq!(idx.num_entries(), 5); // sf:[0,2]=2, slc:[1,2,3]=3
+        assert_eq!(idx.ids_at(37.77, -122.42), &[0, 2]);
+        assert_eq!(idx.ids_at(40.76, -111.89), &[1, 2, 3]);
     }
 
     #[test]

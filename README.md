@@ -24,6 +24,17 @@ for &id in index.ids_at(37.77, -122.42) {
 }
 ```
 
+### Writing
+
+`SpeciesRangeIndex::write` is the canonical writer for the format — cells are
+sorted, IDs are sorted/deduplicated per cell, and duplicate cells are merged, so
+the input need not be pre-normalized:
+
+```rust,ignore
+// `entries`: each H3 cell -> the IDs that fall in it.
+SpeciesRangeIndex::write(path, num_labels as u32, resolution, entries)?;
+```
+
 ## On-disk format
 
 A compact `OGI1` binary (32-byte header + CSR `cells`/`offsets`/`ids` arrays),
@@ -32,8 +43,8 @@ touched by a lookup are paged in — a multi-hundred-MB index costs a handful of
 resident pages per query. Little-endian targets only (the slices are
 reinterpreted zero-copy).
 
-The format is intended to be produced by an offline build pipeline; this crate
-is the read side.
+The format is typically produced by an offline build pipeline. This crate
+provides both sides: `write` to produce an index and `load`/`ids_at` to read it.
 
 ## Python bindings
 
